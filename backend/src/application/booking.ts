@@ -1,6 +1,9 @@
 import { Request, Response, NextFunction } from "express";
 
 import Booking from "../infrastructure/schemas/Booking";
+import Hotel from "../infrastructure/schemas/Hotel";
+import ValidationError from "../domain/errors/validation-error";
+import NotFoundError from "../domain/errors/not-found-error";
 
 export const createBooking = async (
   req: Request,
@@ -8,31 +11,42 @@ export const createBooking = async (
   next: NextFunction
 ) => {
   try {
-    const booking = req.body;
+    const { hotelId, checkIn, checkOut, roomNumber } = req.body;
+    const userId = req.user?.userId;
 
-    // Validate the request data
-    if (
-      !booking.hotelId ||
-      !booking.userId ||
-      !booking.checkIn ||
-      !booking.checkOut ||
-      !booking.roomNumber
-    ) {
-        res.status(400).send();
-        return;
+    if (!hotelId || !checkIn || !checkOut || !roomNumber) {
+      throw new ValidationError(
+        "hotelId, checkIn, checkOut and roomNumber are required"
+      );
     }
 
-    // Add the booking
-    await Booking.create({
-      hotelId: booking.hotelId,
-      userId: booking.userId,
-      checkIn: booking.checkIn,
-      checkOut: booking.checkOut,
-      roomNumber: booking.roomNumber,
+    const checkInDate = new Date(checkIn);
+    const checkOutDate = new Date(checkOut);
+
+    if (isNaN(checkInDate.getTime()) || isNaN(checkOutDate.getTime())) {
+      throw new ValidationError("checkIn and checkOut must be valid dates");
+    }
+    if (checkInDate >= checkOutDate) {
+      throw new ValidationError("checkOut must be after checkIn");
+    }
+    if (Number(roomNumber) <= 0) {
+      throw new ValidationError("roomNumber must be a positive number");
+    }
+
+    const hotel = await Hotel.findById(hotelId);
+    if (!hotel) {
+      throw new NotFoundError("Hotel not found");
+    }
+
+    const booking = await Booking.create({
+      hotelId,
+      userId,
+      checkIn: checkInDate,
+      checkOut: checkOutDate,
+      roomNumber: Number(roomNumber),
     });
 
-    // Return the response
-    res.status(201).send();
+    res.status(201).json(booking);
     return;
   } catch (error) {
     next(error);
@@ -62,6 +76,24 @@ export const getAllBookings = async (
 ) => {
   try {
     const bookings = await Booking.find();
+    res.status(200).json(bookings);
+    return;
+  } catch (error) {
+    next(error);
+  }
+};
+
+export const getMyBookings = async (
+  req: Request,
+  res: Response,
+  next: NextFunction
+) => {
+  try {
+    const userId = req.user?.userId;
+    const bookings = await Booking.find({ userId })
+      .populate("hotelId")
+      .sort({ createdAt: -1 });
+
     res.status(200).json(bookings);
     return;
   } catch (error) {

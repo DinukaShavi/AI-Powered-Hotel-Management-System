@@ -1,13 +1,14 @@
-import { useState } from "react";
-import { useNavigate } from "react-router";
+import { useEffect, useState } from "react";
+import { useNavigate, useParams } from "react-router";
 import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
-import { useCreateHotelMutation } from "@/lib/api";
+import { Skeleton } from "@/components/ui/skeleton";
+import { useGetHotelByIdQuery, useUpdateHotelMutation } from "@/lib/api";
 
-const initialFormState = {
+const emptyForm = {
   name: "",
   location: "",
   rating: "",
@@ -17,10 +18,30 @@ const initialFormState = {
   description: "",
 };
 
-export default function CreateHotelPage() {
-  const [formData, setFormData] = useState(initialFormState);
-  const [createHotel, { isLoading }] = useCreateHotelMutation();
+export default function EditHotelPage() {
+  const { id } = useParams();
   const navigate = useNavigate();
+  const {
+    data: hotel,
+    isLoading: isLoadingHotel,
+    isError,
+  } = useGetHotelByIdQuery(id);
+  const [updateHotel, { isLoading: isUpdating }] = useUpdateHotelMutation();
+  const [formData, setFormData] = useState(emptyForm);
+
+  useEffect(() => {
+    if (hotel) {
+      setFormData({
+        name: hotel.name,
+        location: hotel.location,
+        rating: hotel.rating,
+        reviews: hotel.reviews,
+        image: hotel.image,
+        price: hotel.price,
+        description: hotel.description,
+      });
+    }
+  }, [hotel]);
 
   const handleChange = (e) => {
     setFormData((prev) => ({ ...prev, [e.target.name]: e.target.value }));
@@ -29,7 +50,7 @@ export default function CreateHotelPage() {
   const handleSubmit = async (e) => {
     e.preventDefault();
 
-    if (isLoading) return;
+    if (isUpdating) return;
 
     const { name, location, rating, reviews, image, price, description } =
       formData;
@@ -54,7 +75,8 @@ export default function CreateHotelPage() {
     }
 
     try {
-      const hotel = await createHotel({
+      await updateHotel({
+        id,
         name,
         location,
         rating: ratingValue,
@@ -63,16 +85,35 @@ export default function CreateHotelPage() {
         price: Number(price),
         description,
       }).unwrap();
-      toast.success("Hotel created successfully");
-      navigate(`/hotels/${hotel._id}`);
+      toast.success("Hotel updated successfully");
+      navigate(`/hotels/${id}`);
     } catch (error) {
-      toast.error(error?.data?.message || "Hotel creation failed");
+      toast.error(error?.data?.message || "Hotel update failed");
     }
   };
 
+  if (isLoadingHotel) {
+    return (
+      <main className="container mx-auto px-4 py-8 min-h-screen max-w-2xl space-y-4">
+        <Skeleton className="h-8 w-48" />
+        <Skeleton className="h-10 w-full" />
+        <Skeleton className="h-10 w-full" />
+        <Skeleton className="h-24 w-full" />
+      </main>
+    );
+  }
+
+  if (isError) {
+    return (
+      <main className="container mx-auto px-4 py-8 min-h-screen">
+        <p className="text-red-500">Failed to load this hotel.</p>
+      </main>
+    );
+  }
+
   return (
     <main className="container mx-auto px-4 py-8 min-h-screen max-w-2xl">
-      <h1 className="text-2xl font-bold mb-6">Create a Hotel</h1>
+      <h1 className="text-2xl font-bold mb-6">Edit Hotel</h1>
 
       <form onSubmit={handleSubmit} className="space-y-4">
         <div className="space-y-2">
@@ -170,8 +211,8 @@ export default function CreateHotelPage() {
             placeholder="Describe the hotel..."
           />
         </div>
-        <Button type="submit" disabled={isLoading}>
-          {isLoading ? "Creating..." : "Create Hotel"}
+        <Button type="submit" disabled={isUpdating}>
+          {isUpdating ? "Saving..." : "Save Changes"}
         </Button>
       </form>
     </main>

@@ -60,7 +60,7 @@ export const createHotel = async (
     }
 
     // Add the hotel
-    await Hotel.create({
+    const createdHotel = await Hotel.create({
       name: hotel.name,
       location: hotel.location,
       rating: parseFloat(hotel.rating),
@@ -71,7 +71,7 @@ export const createHotel = async (
     });
 
     // Return the response
-    res.status(201).send();
+    res.status(201).json(createdHotel);
     return;
   } catch (error) {
     next(error);
@@ -85,7 +85,10 @@ export const deleteHotel = async (
 ) => {
   try {
     const hotelId = req.params.id;
-    await Hotel.findByIdAndDelete(hotelId);
+    const hotel = await Hotel.findByIdAndDelete(hotelId);
+    if (!hotel) {
+      throw new NotFoundError("Hotel not found");
+    }
 
     // Return the response
     res.status(200).send();
@@ -101,7 +104,7 @@ export const updateHotel = async (
   next: NextFunction
 ) => {
   try {
-    const hotelId = req.params.hotelId;
+    const hotelId = req.params.id;
     const updatedHotel = req.body;
 
     // Validate the request data
@@ -117,10 +120,25 @@ export const updateHotel = async (
       throw new ValidationError("Invalid hotel data");
     }
 
-    await Hotel.findByIdAndUpdate(hotelId, updatedHotel);
+    const hotel = await Hotel.findByIdAndUpdate(
+      hotelId,
+      {
+        name: updatedHotel.name,
+        location: updatedHotel.location,
+        rating: parseFloat(updatedHotel.rating),
+        reviews: parseInt(updatedHotel.reviews),
+        image: updatedHotel.image,
+        price: parseInt(updatedHotel.price),
+        description: updatedHotel.description,
+      },
+      { new: true }
+    );
+    if (!hotel) {
+      throw new NotFoundError("Hotel not found");
+    }
 
     // Return the response
-    res.status(200).send();
+    res.status(200).json(hotel);
     return;
   } catch (error) {
     next(error);

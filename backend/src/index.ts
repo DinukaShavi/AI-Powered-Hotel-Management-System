@@ -3,8 +3,8 @@ import express from "express";
 import connectDB from "./infrastructure/db";
 
 import hotelsRouter from "./api/hotel";
-import usersRouter from "./api/user";
 import bookingsRouter from "./api/booking";
+import authRouter from "./api/auth";
 import cors from "cors";
 import globalErrorHandlingMiddleware from "./api/middlewares/global-error-handling-middleware";
 
@@ -22,8 +22,8 @@ connectDB();
 // });
 
 app.use("/api/hotels", hotelsRouter);
-app.use("/api/users", usersRouter);
 app.use("/api/bookings", bookingsRouter);
+app.use("/api/auth", authRouter);
 
 app.use(globalErrorHandlingMiddleware);
 
