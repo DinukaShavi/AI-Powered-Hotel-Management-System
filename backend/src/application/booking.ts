@@ -4,6 +4,32 @@ import Booking from "../infrastructure/schemas/Booking";
 import Hotel from "../infrastructure/schemas/Hotel";
 import ValidationError from "../domain/errors/validation-error";
 import NotFoundError from "../domain/errors/not-found-error";
+import ForbiddenError from "../domain/errors/forbidden-error";
+import { CreateBookingDTO } from "../domain/dtos/booking";
+
+const MAX_ROOM_NUMBER = 1000;
+
+const findAvailableRoomNumber = async (
+  hotelId: string,
+  checkIn: Date,
+  checkOut: Date
+) => {
+  let roomNumber: number;
+  let isRoomAvailable = false;
+
+  do {
+    roomNumber = Math.floor(Math.random() * MAX_ROOM_NUMBER) + 1;
+    const existingBooking = await Booking.findOne({
+      hotelId,
+      roomNumber,
+      checkIn: { $lt: checkOut },
+      checkOut: { $gt: checkIn },
+    });
+    isRoomAvailable = !existingBooking;
+  } while (!isRoomAvailable);
+
+  return roomNumber;
+};
 
 export const createBooking = async (
   req: Request,
@@ -11,39 +37,27 @@ export const createBooking = async (
   next: NextFunction
 ) => {
   try {
-    const { hotelId, checkIn, checkOut, roomNumber } = req.body;
+    const validationResult = CreateBookingDTO.safeParse(req.body);
+    if (!validationResult.success) {
+      throw new ValidationError(validationResult.error.issues[0].message);
+    }
+
+    const { hotelId, checkIn, checkOut } = validationResult.data;
     const userId = req.user?.userId;
-
-    if (!hotelId || !checkIn || !checkOut || !roomNumber) {
-      throw new ValidationError(
-        "hotelId, checkIn, checkOut and roomNumber are required"
-      );
-    }
-
-    const checkInDate = new Date(checkIn);
-    const checkOutDate = new Date(checkOut);
-
-    if (isNaN(checkInDate.getTime()) || isNaN(checkOutDate.getTime())) {
-      throw new ValidationError("checkIn and checkOut must be valid dates");
-    }
-    if (checkInDate >= checkOutDate) {
-      throw new ValidationError("checkOut must be after checkIn");
-    }
-    if (Number(roomNumber) <= 0) {
-      throw new ValidationError("roomNumber must be a positive number");
-    }
 
     const hotel = await Hotel.findById(hotelId);
     if (!hotel) {
       throw new NotFoundError("Hotel not found");
     }
 
+    const roomNumber = await findAvailableRoomNumber(hotelId, checkIn, checkOut);
+
     const booking = await Booking.create({
       hotelId,
       userId,
-      checkIn: checkInDate,
-      checkOut: checkOutDate,
-      roomNumber: Number(roomNumber),
+      checkIn,
+      checkOut,
+      roomNumber,
     });
 
     res.status(201).json(booking);
@@ -77,6 +91,35 @@ export const getAllBookings = async (
   try {
     const bookings = await Booking.find();
     res.status(200).json(bookings);
+    return;
+  } catch (error) {
+    next(error);
+  }
+};
+
+export const cancelBooking = async (
+  req: Request,
+  res: Response,
+  next: NextFunction
+) => {
+  try {
+    const bookingId = req.params.id;
+    const userId = req.user?.userId;
+
+    const booking = await Booking.findById(bookingId);
+    if (!booking) {
+      throw new NotFoundError("Booking not found");
+    }
+
+    if (booking.userId.toString() !== userId) {
+      throw new ForbiddenError(
+        "You do not have permission to cancel this booking"
+      );
+    }
+
+    await booking.deleteOne();
+
+    res.status(200).send();
     return;
   } catch (error) {
     next(error);

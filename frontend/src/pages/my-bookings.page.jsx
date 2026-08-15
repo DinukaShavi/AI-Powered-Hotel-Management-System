@@ -1,10 +1,12 @@
+import { useState } from "react";
 import { Link } from "react-router";
 import { MapPin } from "lucide-react";
+import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
-import { useGetMyBookingsQuery } from "@/lib/api";
+import { useCancelBookingMutation, useGetMyBookingsQuery } from "@/lib/api";
 
 const formatDate = (dateString) =>
   new Date(dateString).toLocaleDateString(undefined, {
@@ -15,6 +17,24 @@ const formatDate = (dateString) =>
 
 export default function MyBookingsPage() {
   const { data: bookings, isLoading, isError } = useGetMyBookingsQuery();
+  const [cancelBooking] = useCancelBookingMutation();
+  const [cancellingId, setCancellingId] = useState(null);
+
+  const handleCancel = async (bookingId) => {
+    if (!window.confirm("Are you sure you want to cancel this booking?")) {
+      return;
+    }
+
+    setCancellingId(bookingId);
+    try {
+      await cancelBooking(bookingId).unwrap();
+      toast.success("Booking cancelled successfully");
+    } catch (error) {
+      toast.error(error?.data?.message || "Failed to cancel booking");
+    } finally {
+      setCancellingId(null);
+    }
+  };
 
   if (isLoading) {
     return (
@@ -91,6 +111,17 @@ export default function MyBookingsPage() {
                 <p className="text-sm text-muted-foreground">
                   Room {booking.roomNumber}
                 </p>
+              </div>
+              <div className="flex items-start">
+                <Button
+                  variant="destructive"
+                  onClick={() => handleCancel(booking._id)}
+                  disabled={cancellingId === booking._id}
+                >
+                  {cancellingId === booking._id
+                    ? "Cancelling..."
+                    : "Cancel Booking"}
+                </Button>
               </div>
             </CardContent>
           </Card>

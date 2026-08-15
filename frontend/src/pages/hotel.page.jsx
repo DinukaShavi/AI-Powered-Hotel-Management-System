@@ -1,8 +1,6 @@
-import { useState } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
-import { Input } from "@/components/ui/input";
 import {
   useCreateBookingMutation,
   useDeleteHotelMutation,
@@ -21,8 +19,7 @@ import { Link, useParams, useNavigate } from "react-router";
 import { useSelector } from "react-redux";
 import { toast } from "sonner";
 import { Skeleton } from "@/components/ui/skeleton";
-
-const today = new Date().toISOString().split("T")[0];
+import { BookingDialog } from "@/components/BookingDialog";
 
 export default function HotelPage() {
   const { id } = useParams();
@@ -32,12 +29,6 @@ export default function HotelPage() {
   const user = useSelector((state) => state.auth.user);
   const isAdmin = user?.role === "ADMIN";
 
-  const [isBookingOpen, setIsBookingOpen] = useState(false);
-  const [bookingForm, setBookingForm] = useState({
-    checkIn: "",
-    checkOut: "",
-    roomNumber: "",
-  });
   const [createBooking, { isLoading: isBooking }] = useCreateBookingMutation();
   const [deleteHotel, { isLoading: isDeleting }] = useDeleteHotelMutation();
 
@@ -53,51 +44,25 @@ export default function HotelPage() {
     try {
       await deleteHotel(id).unwrap();
       toast.success("Hotel deleted successfully");
-      navigate("/hotels");
+      navigate("/");
     } catch (error) {
       toast.error(error?.data?.message || "Failed to delete hotel");
     }
   };
 
   const handleBookNowClick = () => {
-    if (!isAuthenticated) {
-      toast.error("Please sign in to book a room");
-      navigate("/sign-in");
-      return;
-    }
-    setIsBookingOpen(true);
+    toast.error("Please sign in to book a room");
+    navigate("/sign-in");
   };
 
-  const handleBookingChange = (e) => {
-    setBookingForm((prev) => ({ ...prev, [e.target.name]: e.target.value }));
-  };
-
-  const handleBookingSubmit = async (e) => {
-    e.preventDefault();
-
-    if (isBooking) return;
-
-    if (!bookingForm.checkIn || !bookingForm.checkOut || !bookingForm.roomNumber) {
-      toast.error("Please fill in all booking details");
-      return;
-    }
-    if (new Date(bookingForm.checkIn) >= new Date(bookingForm.checkOut)) {
-      toast.error("Check-out date must be after check-in date");
-      return;
-    }
-
+  const handleBook = async (bookingData) => {
     try {
-      await createBooking({
-        hotelId: id,
-        checkIn: bookingForm.checkIn,
-        checkOut: bookingForm.checkOut,
-        roomNumber: Number(bookingForm.roomNumber),
-      }).unwrap();
+      await createBooking(bookingData).unwrap();
       toast.success("Booking confirmed!");
-      setIsBookingOpen(false);
-      setBookingForm({ checkIn: "", checkOut: "", roomNumber: "" });
+      navigate("/my-bookings");
     } catch (error) {
       toast.error(error?.data?.message || "Booking failed");
+      throw error;
     }
   };
 
@@ -235,76 +200,19 @@ export default function HotelPage() {
               <p className="text-2xl font-bold">${hotel.price}</p>
               <p className="text-sm text-muted-foreground">per night</p>
             </div>
-            {!isBookingOpen && (
+            {isAuthenticated ? (
+              <BookingDialog
+                hotelName={hotel.name}
+                hotelId={id}
+                onSubmit={handleBook}
+                isLoading={isBooking}
+              />
+            ) : (
               <Button size="lg" onClick={handleBookNowClick}>
                 Book Now
               </Button>
             )}
           </div>
-
-          {isBookingOpen && (
-            <Card>
-              <CardContent className="p-4 space-y-4">
-                <h2 className="text-xl font-semibold">Book Your Stay</h2>
-                <form onSubmit={handleBookingSubmit} className="space-y-4">
-                  <div className="grid grid-cols-2 gap-4">
-                    <div className="space-y-2">
-                      <label htmlFor="checkIn" className="text-sm font-medium">
-                        Check-in
-                      </label>
-                      <Input
-                        id="checkIn"
-                        name="checkIn"
-                        type="date"
-                        min={today}
-                        value={bookingForm.checkIn}
-                        onChange={handleBookingChange}
-                      />
-                    </div>
-                    <div className="space-y-2">
-                      <label htmlFor="checkOut" className="text-sm font-medium">
-                        Check-out
-                      </label>
-                      <Input
-                        id="checkOut"
-                        name="checkOut"
-                        type="date"
-                        min={bookingForm.checkIn || today}
-                        value={bookingForm.checkOut}
-                        onChange={handleBookingChange}
-                      />
-                    </div>
-                  </div>
-                  <div className="space-y-2">
-                    <label htmlFor="roomNumber" className="text-sm font-medium">
-                      Room Number
-                    </label>
-                    <Input
-                      id="roomNumber"
-                      name="roomNumber"
-                      type="number"
-                      min="1"
-                      placeholder="e.g. 101"
-                      value={bookingForm.roomNumber}
-                      onChange={handleBookingChange}
-                    />
-                  </div>
-                  <div className="flex gap-2">
-                    <Button type="submit" disabled={isBooking}>
-                      {isBooking ? "Booking..." : "Confirm Booking"}
-                    </Button>
-                    <Button
-                      type="button"
-                      variant="outline"
-                      onClick={() => setIsBookingOpen(false)}
-                    >
-                      Cancel
-                    </Button>
-                  </div>
-                </form>
-              </CardContent>
-            </Card>
-          )}
         </div>
       </div>
     </div>

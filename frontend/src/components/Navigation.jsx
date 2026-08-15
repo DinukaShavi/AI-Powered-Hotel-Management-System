@@ -27,6 +27,9 @@ function Navigation() {
           <Link to={`/`} className="transition-colors">
             Home
           </Link>
+          <Link to={`/hotels`} className="transition-colors">
+            Hotels
+          </Link>
           {isAuthenticated && (
             <Link to={`/my-bookings`} className="transition-colors">
               My Bookings

@@ -14,3 +14,7 @@ npm-debug.log*
 # Env files
 .env
 .env.local
+
+# Reference-only folders, not part of this project
+/aidf-4-back-end-main/
+/aidf-4-front-end-main/

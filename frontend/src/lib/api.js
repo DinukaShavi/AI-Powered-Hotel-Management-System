@@ -38,6 +38,13 @@ export const api = createApi({
       }),
       invalidatesTags: [{ type: "Hotel", id: "LIST" }],
     }),
+    aiSearchHotels: builder.mutation({
+      query: (query) => ({
+        url: "hotels/ai-search",
+        method: "POST",
+        body: { query },
+      }),
+    }),
     updateHotel: builder.mutation({
       query: ({ id, ...hotel }) => ({
         url: `hotels/${id}`,
@@ -94,6 +101,16 @@ export const api = createApi({
             ]
           : [{ type: "Booking", id: "LIST" }],
     }),
+    cancelBooking: builder.mutation({
+      query: (id) => ({
+        url: `bookings/${id}`,
+        method: "DELETE",
+      }),
+      invalidatesTags: (result, error, id) => [
+        { type: "Booking", id },
+        { type: "Booking", id: "LIST" },
+      ],
+    }),
   }),
 });
 
@@ -101,6 +118,7 @@ export const {
   useGetHotelsQuery,
   useGetHotelByIdQuery,
   useCreateHotelMutation,
+  useAiSearchHotelsMutation,
   useUpdateHotelMutation,
   useDeleteHotelMutation,
   useRegisterMutation,
@@ -108,4 +126,5 @@ export const {
   useGetCurrentUserQuery,
   useCreateBookingMutation,
   useGetMyBookingsQuery,
+  useCancelBookingMutation,
 } = api;

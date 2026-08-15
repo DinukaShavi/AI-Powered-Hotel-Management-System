@@ -3,8 +3,7 @@ import { NextFunction, Request, Response } from "express";
 import Hotel from "../infrastructure/schemas/Hotel";
 import NotFoundError from "../domain/errors/not-found-error";
 import ValidationError from "../domain/errors/validation-error";
-
-const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+import { CreateHotelDTO, UpdateHotelDTO } from "../domain/dtos/hotel";
 
 export const getAllHotels = async (
   req: Request,
@@ -45,33 +44,14 @@ export const createHotel = async (
   next: NextFunction
 ) => {
   try {
-    const hotel = req.body;
-    // Validate the request data
-    if (
-      !hotel.name ||
-      !hotel.location ||
-      !hotel.rating ||
-      !hotel.reviews ||
-      !hotel.image ||
-      !hotel.price ||
-      !hotel.description
-    ) {
-      throw new ValidationError("Invalid hotel data");
+    const validationResult = CreateHotelDTO.safeParse(req.body);
+    if (!validationResult.success) {
+      throw new ValidationError(validationResult.error.issues[0].message);
     }
 
-    // Add the hotel
-    const createdHotel = await Hotel.create({
-      name: hotel.name,
-      location: hotel.location,
-      rating: parseFloat(hotel.rating),
-      reviews: parseInt(hotel.reviews),
-      image: hotel.image,
-      price: parseInt(hotel.price),
-      description: hotel.description,
-    });
+    const hotel = await Hotel.create(validationResult.data);
 
-    // Return the response
-    res.status(201).json(createdHotel);
+    res.status(201).json(hotel);
     return;
   } catch (error) {
     next(error);
@@ -105,34 +85,15 @@ export const updateHotel = async (
 ) => {
   try {
     const hotelId = req.params.id;
-    const updatedHotel = req.body;
 
-    // Validate the request data
-    if (
-      !updatedHotel.name ||
-      !updatedHotel.location ||
-      !updatedHotel.rating ||
-      !updatedHotel.reviews ||
-      !updatedHotel.image ||
-      !updatedHotel.price ||
-      !updatedHotel.description
-    ) {
-      throw new ValidationError("Invalid hotel data");
+    const validationResult = UpdateHotelDTO.safeParse(req.body);
+    if (!validationResult.success) {
+      throw new ValidationError(validationResult.error.issues[0].message);
     }
 
-    const hotel = await Hotel.findByIdAndUpdate(
-      hotelId,
-      {
-        name: updatedHotel.name,
-        location: updatedHotel.location,
-        rating: parseFloat(updatedHotel.rating),
-        reviews: parseInt(updatedHotel.reviews),
-        image: updatedHotel.image,
-        price: parseInt(updatedHotel.price),
-        description: updatedHotel.description,
-      },
-      { new: true }
-    );
+    const hotel = await Hotel.findByIdAndUpdate(hotelId, validationResult.data, {
+      new: true,
+    });
     if (!hotel) {
       throw new NotFoundError("Hotel not found");
     }
