@@ -5,65 +5,141 @@ conclusions, see [README.md](README.md); this file holds the evidence.
 
 Three findings are recorded here:
 
-1. A dependency conflict in `@asgardeo/react` that renders a React 18 app blank
-2. An unrelated pre-existing crash in the app that produced the same symptom
+1. Why the application rendered a blank page — and why the first diagnosis was wrong
+2. A real dependency-declaration defect in `@asgardeo/react`, and its actual (limited) impact
 3. How OIDC claim release was isolated from scope request
 
 ---
 
-## 1. The SDK renderer conflict
+## 1. The blank page, and a misattributed cause
 
 ### Symptom
 
-A blank page. `index.html` served `200`, the dev server reported no transform errors, and the
-production build succeeded.
+A blank page after adding the integration. `index.html` served `200`, the dev server reported
+no transform errors, and the production build succeeded.
 
-### Finding the conflict
+### First diagnosis — wrong
 
-`npm install @asgardeo/react` emitted two `ERESOLVE overriding peer dependency` warnings.
-Inspecting the tree:
+`npm install @asgardeo/react` had emitted `ERESOLVE overriding peer dependency` warnings, and
+the tree contained a second renderer (see section 2). Requiring that renderer directly in Node
+throws, which looked like a sufficient explanation. It was not tested against the actual
+symptom before being acted on.
+
+The workaround was applied, and **the page was still blank.** The first diagnosis had explained
+nothing.
+
+### Second diagnosis — reading the error instead of reasoning about it
+
+Rather than theorise again, the browser's own console was captured from a headless run:
 
 ```
-$ npm ls react
-aidf-4-front-end@0.0.0
-+-- @asgardeo/react@0.25.13
-| +-- @floating-ui/react@0.27.12
-| | `-- react@18.3.1 deduped invalid: "^19.2.4" from node_modules/@asgardeo/react/node_modules/react-dom
-| +-- react-dom@19.2.4
+$ chrome --headless=new --dump-dom --enable-logging=stderr http://localhost:4173/
+[INFO:CONSOLE] "Uncaught Error: Minified React error #31;
+  args[]=object%20with%20keys%20%7Bstatus%2C%20error%7D"
 ```
 
-A second renderer had been installed beside the application's own. The SDK's manifest explains
-why:
+React error #31 is *objects are not valid as a React child* — and the offending object had keys
+`{status, error}`, the shape of an RTK Query failure.
+
+`frontend/src/components/HotelListings.jsx` rendered the error object directly:
+
+```jsx
+<p className="text-red-500">{error}</p>
+```
+
+`error` is an RTK Query error object, not a string. The trigger was the backend being down: the
+hotels request failed, the error branch rendered, React threw, and because an uncaught throw
+during render unmounts the whole tree, the *entire* application went blank rather than just the
+hotel list.
+
+This bug pre-dates the Asgardeo work. The integration merely supplied a reason to load the page
+with the backend stopped.
+
+### What this cost, and the correction
+
+The dependency conflict in section 2 is real, but it **did not cause the blank page**. It was
+treated as the cause on the strength of a plausible mechanism and a crash reproduced in an
+artificial setting, and that conclusion survived until a clean-room test contradicted it.
+
+Two lessons, in order of usefulness:
+
+- A fix that does not resolve the symptom is evidence the diagnosis is wrong. Here the symptom
+  persisted and the diagnosis was kept anyway — the error was still believed, just assumed to
+  be compounded by something else.
+- Capturing the actual error ended in minutes what re-reasoning from the symptom had not. Two
+  independent faults can produce an identical symptom, and only one of them was real.
+
+---
+
+## 2. The dependency-declaration defect
+
+Real, reported upstream — but far narrower in effect than first assumed.
+
+### The declaration
 
 ```json
-"dependencies":     { "react-dom": "19.2.4", "@floating-ui/react": "0.27.12", ... }
+"dependencies":     { "react-dom": "19.2.4", "@types/react-dom": "19.2.3", ... }
 "peerDependencies": { "react": ">=16.8.0", "@types/react": ">=16.8.0" }
 ```
 
 `react-dom` is a **hard dependency pinned to an exact 19.x**, while `react` is a peer accepting
-anything from 16.8 up. The two cannot be satisfied together on React 18: npm resolves `react`
-to the host's 18.3.1 and nests its own `react-dom@19.2.4`. `react-dom` is a renderer for a
-specific `react` and belongs in `peerDependencies`.
+anything from 16.8 up. A renderer must match the `react` it renders with, so these cannot be
+satisfied together on React 18.
 
-### Reproducing the crash in isolation
+### Observed tree
 
-Loading the nested renderer directly, outside the browser:
+From a clean-room reproduction — a minimal Vite + React 18 app with the SDK installed and no
+workarounds:
+
+```
+$ npm ls react
+asgardeo-react18-repro@0.0.0
++-- @asgardeo/react@0.25.13
+| +-- @floating-ui/react@0.27.12
+| | +-- @floating-ui/react-dom@2.1.9
+| | | `-- react@18.3.1 deduped invalid: "^19.2.4" from node_modules/@asgardeo/react/node_modules/react-dom
+| | `-- react@18.3.1 deduped
+| +-- react-dom@19.2.4
+| | `-- react@18.3.1 deduped invalid: "^19.2.4" from node_modules/@asgardeo/react/node_modules/react-dom
+| `-- react@18.3.1 deduped
++-- react-dom@18.3.1
+`-- react@18.3.1
+```
+
+npm itself marks the tree `invalid`: the nested `react-dom@19.2.4` requires `react ^19.2.4` and
+is given 18.3.1.
+
+### Actual impact — measured
+
+The same repro **renders correctly** under both `vite dev` and `vite preview`, with no console
+errors. `@asgardeo/react`'s `dist/index.js` does not import `react-dom` itself, so the
+mismatched copy is never executed in normal use.
+
+Both renderers do reach the bundle, confirmed by grepping the build output for each version's
+internals symbol. Deduplicating them:
+
+```
+before (two renderers):  711,161 bytes   (196.23 kB gzip)
+after  (one renderer):   707,294 bytes   (194.90 kB gzip)
+```
+
+So the practical cost is roughly 3.9 kB of dead renderer, not a failure.
+
+### The copy is genuinely broken if loaded
 
 ```
 $ node -e "require('./node_modules/@asgardeo/react/node_modules/react-dom/client')"
-CRASH ON LOAD: Cannot read properties of undefined (reading 'S')
-```
-
-The cause, confirmed against the installed React:
-
-```
-$ node -e "const R=require('react'); console.log(Object.keys(R).filter(k=>k.includes('INTERNALS')))"
-[ '__SECRET_INTERNALS_DO_NOT_USE_OR_YOU_WILL_BE_FIRED' ]
+TypeError: Cannot read properties of undefined (reading 'S')
 ```
 
 React 19's `react-dom` reads
-`React.__CLIENT_INTERNALS_DO_NOT_USE_OR_WARN_USERS_THEY_CANNOT_UPGRADE`, which React 18.3.1
-does not define. Dereferencing `.S` on `undefined` throws at module load.
+`React.__CLIENT_INTERNALS_DO_NOT_USE_OR_WARN_USERS_THEY_CANNOT_UPGRADE`; React 18.3.1 defines
+only `__SECRET_INTERNALS_DO_NOT_USE_OR_YOU_WILL_BE_FIRED`. Dereferencing `.S` on `undefined`
+throws at module load.
+
+This is what makes the defect worth reporting: any consumer whose bundler resolves that copy
+would hit this. This application's does not — which is exactly the distinction the first
+diagnosis missed.
 
 ### The lockfile gotcha
 
@@ -84,15 +160,18 @@ NONE
 ```
 
 The lockfile still pinned the nested `react-dom@19.2.4`, and npm honoured the lock over the new
-override. Deleting `node_modules/@asgardeo` alone did not help — the install restored 19.2.4
-from the lock each time. Regenerating `package-lock.json` resolved it:
+override. Deleting `node_modules/@asgardeo` did not help — each install restored 19.2.4 from
+the lock. Regenerating `package-lock.json` resolved it:
 
 ```
 $ npm ls react-dom
 +-- @asgardeo/react@0.25.13 overridden
 | +-- @floating-ui/react@0.27.12
+| | +-- @floating-ui/react-dom@2.1.9
+| | | `-- react-dom@18.3.1 deduped
 | | `-- react-dom@18.3.1 deduped
 | `-- react-dom@18.3.1 deduped
+`-- react-dom@18.3.1
 ```
 
 One renderer, no `invalid` markers.
@@ -100,48 +179,18 @@ One renderer, no `invalid` markers.
 Worth knowing generally: when an `overrides` entry appears to have no effect, check whether the
 lockfile recorded it before assuming the override syntax is wrong.
 
-### Fix
+### Applied
 
 - `frontend/package.json` — `overrides` pinning the SDK to the app's `react-dom`
-- `frontend/vite.config.js` — `resolve.dedupe: ["react", "react-dom"]`, so the bundler cannot
-  emit two renderers even if the tree regresses
+- `frontend/vite.config.js` — `resolve.dedupe: ["react", "react-dom"]`
 
-Both are removable once the SDK moves `react-dom` to `peerDependencies`, or on a React 19
-upgrade.
+Kept as dependency hygiene, not as a fix for a live failure. Removable once the SDK moves
+`react-dom` to `peerDependencies`, or on a React 19 upgrade.
 
----
+### Repro environment
 
-## 2. The blank page was actually two bugs
-
-Fixing the renderer conflict did not restore the page. Rather than guess again, the browser's
-own console was captured:
-
-```
-$ chrome --headless=new --dump-dom --enable-logging=stderr http://localhost:4173/
-[INFO:CONSOLE] "Uncaught Error: Minified React error #31;
-  args[]=object%20with%20keys%20%7Bstatus%2C%20error%7D"
-```
-
-React error #31 is *objects are not valid as a React child* — and the object had keys
-`{status, error}`, the shape of an RTK Query failure.
-
-`frontend/src/components/HotelListings.jsx` rendered the error object directly:
-
-```jsx
-<p className="text-red-500">{error}</p>
-```
-
-`error` is an RTK Query error object, not a string. The trigger was the backend being down:
-the hotels request failed, the error branch rendered, React threw, and because an uncaught
-throw during render unmounts the whole tree, the entire application went blank rather than just
-the hotel list.
-
-This bug pre-dates the Asgardeo work; the integration merely gave a reason to load the page
-with the backend stopped. Fixed by reading the message off the object with a fallback.
-
-The lesson is about method rather than React: two independent faults produced an identical
-symptom, and the first fix was verified only by assumption. Reading the actual error, instead
-of re-reasoning from the symptom, separated them.
+`@asgardeo/react` 0.25.13 · react 18.3.1 · react-dom 18.3.1 · Vite 6.4.3 · Node v22.12.0 ·
+npm 10.9.0 · Windows 11
 
 ---
 
