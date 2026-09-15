@@ -69,9 +69,7 @@ Allowed origin.
 
 The Asgardeo flow talks only to the identity provider, so it runs without the backend.
 
-## The React 18 / 19 SDK dependency bug
-
-**Verified.** Reproduced directly, and fixed.
+## The React 18 / 19 SDK dependency conflict
 
 `@asgardeo/react@0.25.13` declares `react-dom: "19.2.4"` as a **hard dependency** while
 declaring `react: ">=16.8.0"` as a peer dependency:
@@ -81,30 +79,43 @@ declaring `react: ">=16.8.0"` as a peer dependency:
 "peerDependencies": { "react": ">=16.8.0", ... }
 ```
 
-Those two are incoherent. The package installs happily against React 18, then pulls in a React
-19 renderer beside it. Loading that renderer fails:
+A renderer must match the `react` it renders with, so an exact 19.x pin cannot coexist with a
+`>=16.8.0` peer range. On this React 18 application npm resolves `react` to 18.3.1 and installs
+a second, nested `react-dom@19.2.4` beside it — and reports the tree as invalid:
 
 ```
-Cannot read properties of undefined (reading 'S')
+react@18.3.1 deduped invalid: "^19.2.4" from node_modules/@asgardeo/react/node_modules/react-dom
 ```
 
-React 19's `react-dom` expects `React.__CLIENT_INTERNALS_DO_NOT_USE_OR_WARN_USERS_THEY_CANNOT_UPGRADE`;
-React 18.3.1 defines only `__SECRET_INTERNALS_DO_NOT_USE_OR_YOU_WILL_BE_FIRED`. Reading `.S`
-off the missing object throws. `react-dom` belongs in `peerDependencies` for exactly this
-reason.
+Both renderers then reach the production bundle.
 
-Worked around in two places:
+**Scope of the impact — measured, not assumed.** A clean-room reproduction (minimal Vite +
+React 18 app, SDK installed with no workarounds, wrapped in `AsgardeoProvider`) **renders
+correctly** under both `vite dev` and `vite preview`, with no console errors. The SDK's
+`dist/index.js` never imports `react-dom` itself, so the mismatched copy is never executed in
+normal use.
+
+The practical cost is therefore a duplicated renderer rather than a failure: removing it took
+the repro bundle from 711,161 to 707,294 bytes (~3.9 kB raw, ~1.3 kB gzip of unused code).
+
+The nested copy *is* genuinely broken if anything loads it — `require()`ing it directly throws
+`Cannot read properties of undefined (reading 'S')`, because React 19's `react-dom` reads
+`React.__CLIENT_INTERNALS_DO_NOT_USE_OR_WARN_USERS_THEY_CANNOT_UPGRADE` and React 18.3.1
+defines only `__SECRET_INTERNALS_DO_NOT_USE_OR_YOU_WILL_BE_FIRED`. Any consumer whose bundler
+resolved that copy would hit it. This one does not.
+
+Addressed here as dependency hygiene rather than a fix for a live failure:
 
 - `frontend/package.json` — an `overrides` entry pinning the SDK to the app's `react-dom@18.3.1`
-- `frontend/vite.config.js` — `resolve.dedupe: ["react", "react-dom"]`, guaranteeing a single
-  renderer in the bundle
+- `frontend/vite.config.js` — `resolve.dedupe: ["react", "react-dom"]`, so a single renderer is
+  guaranteed even if the tree regresses
 
 Adding `overrides` alone was not sufficient: npm recorded the override but left the nested
 `react-dom@19.2.4` on disk, still pinned by `package-lock.json`. The lockfile had to be
 regenerated before the tree resolved to a single `react-dom@18.3.1`.
 
-Both workarounds can be removed once the SDK moves `react-dom` to peer dependencies, or if the
-application upgrades to React 19.
+Both can be removed once the SDK moves `react-dom` to peer dependencies, or if the application
+upgrades to React 19. `react-dom` belongs in `peerDependencies` the way `react` already is.
 
 ## Claim release: scope request is only one of three gates
 
@@ -228,3 +239,7 @@ One unrelated fix was needed to surface any of this: `HotelListings.jsx` rendere
 Query error object (`{status, error}`) as a React child, which throws React error #31 and
 unmounts the entire application. With the backend down, that produced a blank page. It now
 renders the error message instead.
+
+This pre-existing bug, not the dependency conflict above, was the sole cause of the blank page.
+The conflict was found while investigating it and initially misattributed as the cause; the
+clean-room reproduction described in [ASGARDEO.md](ASGARDEO.md) is what disproved that.
