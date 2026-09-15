@@ -79,7 +79,16 @@ export default function HotelListings() {
           })}
         </div>
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-8 mt-4">
-          <p className="text-red-500">{error}</p>
+          {/*
+            `error` is an RTK Query error object ({status, error} or
+            {status, data}), not a string. Rendering it directly throws
+            React error #31 and unmounts the whole app.
+          */}
+          <p className="text-red-500">
+            {error?.data?.message ||
+              error?.error ||
+              "Could not load hotels. Is the backend running on port 8000?"}
+          </p>
         </div>
       </section>
     );

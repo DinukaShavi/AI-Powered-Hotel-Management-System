@@ -8,5 +8,9 @@ export default defineConfig({
     alias: {
       "@": path.resolve(__dirname, "./src"),
     },
+    // Guarantees a single copy of the renderer in the bundle. @asgardeo/react
+    // (and its @floating-ui dependency) would otherwise pull in their own
+    // react-dom, and two renderers against one React instance render nothing.
+    dedupe: ["react", "react-dom"],
   },
 })

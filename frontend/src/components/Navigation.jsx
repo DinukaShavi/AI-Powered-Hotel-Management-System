@@ -4,6 +4,7 @@ import { useDispatch, useSelector } from "react-redux";
 import { Link, useNavigate } from "react-router";
 import { toast } from "sonner";
 import { logout } from "@/lib/features/authSlice";
+import AsgardeoAuthControls from "@/components/AsgardeoAuthControls";
 
 function Navigation() {
   const { user, isAuthenticated } = useSelector((state) => state.auth);
@@ -40,6 +41,9 @@ function Navigation() {
               Create Hotel
             </Link>
           )}
+          <Link to={`/asgardeo`} className="transition-colors">
+            Asgardeo Demo
+          </Link>
         </div>
       </div>
 
@@ -72,6 +76,7 @@ function Navigation() {
             </Button>
           </>
         )}
+        <AsgardeoAuthControls />
       </div>
     </nav>
   );

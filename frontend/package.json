@@ -10,6 +10,7 @@
     "preview": "vite preview"
   },
   "dependencies": {
+    "@asgardeo/react": "^0.25.13",
     "@hookform/resolvers": "^5.8.0",
     "@radix-ui/react-dialog": "^1.1.23",
     "@radix-ui/react-label": "^2.1.15",
@@ -32,6 +33,12 @@
     "tailwind-merge": "^2.6.0",
     "tailwindcss-animate": "^1.0.7",
     "zod": "^4.4.3"
+  },
+  "comment:overrides": "@asgardeo/react@0.25.13 pins react-dom 19.2.4 as a hard dependency while declaring react >=16.8.0 as a peer. On this React 18 app that installs a second, mismatched renderer which crashes on load ('Cannot read properties of undefined (reading S)') because react-dom 19 expects React 19 internals. Forcing it onto the app's own react-dom. Remove this once the SDK moves react-dom to peerDependencies, or when this app upgrades to React 19.",
+  "overrides": {
+    "@asgardeo/react": {
+      "react-dom": "$react-dom"
+    }
   },
   "devDependencies": {
     "@eslint/js": "^9.17.0",
