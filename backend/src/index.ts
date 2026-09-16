@@ -7,6 +7,8 @@ import bookingsRouter from "./api/booking";
 import authRouter from "./api/auth";
 import cors from "cors";
 import globalErrorHandlingMiddleware from "./api/middlewares/global-error-handling-middleware";
+import tunnelGuard from "./api/middlewares/tunnel-guard-middleware";
+import { getOpenApiSpec } from "./api/openapi";
 
 // Create an Express instance
 const app = express();
@@ -21,12 +23,15 @@ connectDB();
 //   next();
 // });
 
+app.use(tunnelGuard);
+
+app.get("/api-docs.json", getOpenApiSpec);
+
 app.use("/api/hotels", hotelsRouter);
 app.use("/api/bookings", bookingsRouter);
 app.use("/api/auth", authRouter);
 
 app.use(globalErrorHandlingMiddleware);
 
-// Define the port to run the server
 const PORT = 8000;
 app.listen(PORT, () => console.log(`Server is running on port ${PORT}...`));
